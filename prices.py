@@ -32,7 +32,7 @@ class MolQuerier:
     
     def mculequery(self):
         MCULEfound = []; MCULEsmiles = []; MCULEid = []; MCULEurl = []; MCULEprices = [];
-        headers = {'Authorization': f"Token {self.__MCULE_TOKEN}"}
+        headers = {'Authorization': f"Token {self.MCULE_TOKEN}"}
         for compi in range(self.compoundnr):
             comp = urllib.parse.quote(self.compounds[compi], safe='')
             response = requests.get(f'https://mcule.com/api/v1/search/lookup/?query={comp}', headers=headers) 
