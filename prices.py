@@ -29,7 +29,6 @@ class MolQuerier:
         self.csrf_token, self.cookie_csrf = self.gettoken();
         self.cspages  = []; 
         self.interval = 24
-        self.__MCULE_TOKEN = "cd69ac4c24cccc1e99b5d6d8f0cb4c267ad84f47"; 
     
     def mculequery(self):
         MCULEfound = []; MCULEsmiles = []; MCULEid = []; MCULEurl = []; MCULEprices = [];
