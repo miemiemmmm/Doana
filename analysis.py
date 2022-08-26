@@ -2,10 +2,9 @@ import os
 import json
 import pickle
 
-
 import numpy as np 
-import pytraj as pt 
-import pandas as pd
+# import pytraj as pt 
+# import pandas as pd
 import prolif as plf
 import matplotlib as plt 
 from scipy.spatial import distance_matrix
@@ -14,13 +13,15 @@ import MDAnalysis as mda
 import rdkit.Chem as Chem
 from rdkit.Chem import Draw, AllChem
 
-
 import matplotlib.ticker as ticker
 from IPython.display import Image
 
 
-class PLIFGen:
+class PLIFGen_Dock:
+  """
+  """
   def __init__(self, parmdic):
+
     # keys # ['ligfile', 'profile', 'resultdat', 'resultmol2']
     self.parms = parmdic;
 
@@ -219,8 +220,13 @@ class PLIFGen:
       pickle.dump(dictosave, fileout)
       print("Saved the fingerprint to file:", self.parms["outpkl"])
 
+class PLIFGen_MD:
+  """
+  """
+  def __init__(self, parmdic):
+    pass
 
-class PLIFRead:
+class PLIFRead_Dock:
   def __init__(self, pklfile):
     with open(pklfile, "br") as file1: resultdic = pickle.load(file1);
     self.fpdata  = resultdic["fp_data"];
