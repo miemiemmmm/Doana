@@ -6,7 +6,7 @@ import numpy as np
 # import pytraj as pt 
 # import pandas as pd
 import prolif as plf
-import matplotlib as plt 
+import matplotlib.pyplot as plt 
 from scipy.spatial import distance_matrix
 
 import MDAnalysis as mda
@@ -19,22 +19,29 @@ from IPython.display import Image
 
 class PLIFGen_Dock:
   """
+    Both SDF and MOL2 formats are supported as input 
+    Example: 
+    >>> from Doana import analysis
+    >>> parmdic = {
+      'reflig'     : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/tmp_Sampling_target_clean.mol2",
+      'profile'    : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/tmp_Sampling_target.pdb",
+      'resultmols' : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.mol2",
+      'resultdat'  : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.dat",
+      'outpkl'     : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.pkl",  
+      'onlymols'   : list(range(1,30))+list(range(50,69)),
+    }
+    >>> wrapper = analysis.PLIFGen_Dock(parmdic)
+    >>> wrapper.gen() 
+    >>> OIdic = wrapper.calc_OI(1.5, printrecords=False)
+    >>> wrapper.savedata()
   """
   def __init__(self, parmdic):
-
-    # keys # ['ligfile', 'profile', 'resultdat', 'resultmol2']
     self.parms = parmdic;
+    self.refmol = []; 
+    self.lig_suppl = [];
+    self.ligandfile = parmdic["resultmols"]; 
 
-    # Clean the lone pair and dummy atoms in mol2 if necessary;
-    if ("mol2" in parmdic["resultmols"]) and ("cleanscript" in parmdic.keys()):
-      self.CLEANMOL2SCRIPT = parmdic["cleanscript"]
-      self.ligandfile = self.clean_mol2(parmdic["resultmols"])
-    elif ("mol2" in parmdic["resultmols"]) and ("cleanscript" not in parmdic.keys()):
-      self.CLEANMOL2SCRIPT = "/home/miemie/Dropbox/Documents/PortableWork/myscripts/clean_SEEDmol2.sh"
-      self.ligandfile = self.clean_mol2(parmdic["resultmols"])
-    else:
-      self.ligandfile = parmdic["resultmols"]
-
+    # Default parameters
     self.FP_TYPE1 = ["HBDonor", "HBAcceptor", "PiStacking", "CationPi","Cationic"]
     self.FP_TYPE2 = ['Hydrophobic']
     self.VDWRADII = {'AA': 1.85, 'AG': 1.72, 'AL': 1.84, 'AR': 1.88, 'AT': 2.02, 'AU': 1.66, 'B': 1.92, 'BA': 2.68,
@@ -45,56 +52,123 @@ class PLIFGen_Dock:
       'PO': 1.97, 'PT': 1.75, 'RA': 2.83, 'RN': 2.2, 'RR': 3.03, 'S': 1.8, 'SB': 2.06, 'SE': 1.9,
       'SI': 2.1, 'SN': 2.17, 'SR': 2.49, 'TE': 2.06, 'TL': 1.96, 'U': 1.86, 'XE': 2.16, 'ZN': 1.39,
     }
-
-    self.profile = parmdic["profile"]
-    mda_prot = mda.Universe(self.profile, top=self.profile, guess_bonds=True, vdwradii=self.VDWRADII);
-    elements = mda.topology.guessers.guess_types(mda_prot.atoms.names);
-    mda_prot.add_TopologyAttr("elements", elements);
-    prot = plf.Molecule.from_mda(mda_prot);
-
+    
+    # Initial receptor PDB structure
+    try: 
+      self.profile = self.parms["profile"]
+      print(f"Loading receptor PDB structure: {self.profile}")
+      mda_prot = mda.Universe(self.profile, top=self.profile, guess_bonds=True, vdwradii=self.VDWRADII);
+      elements = mda.topology.guessers.guess_types(mda_prot.atoms.names);
+      mda_prot.add_TopologyAttr("elements", elements);
+      self.prot = plf.Molecule.from_mda(mda_prot);
+    except: 
+      print("Failed to load the PDB into prolif"); 
+      print("Please carefully read the error message and modify the PDB file."); 
+      raise
+    
+    # Initial pose library
+    if "reflig" in self.parms.keys() and len(self.parms["reflig"]) > 0:
+      # Initialize reference ligand while initializing the PLIF generator
+      self.setreflig(self.parms["reflig"])
+      
+    # Read ligand molecules
     self.failed_mol = []
     if '.sdf' in self.ligandfile:
       # SDF format
-      self.lig_suppl, self.success_mol, self.failed_mol = self.sdf_supplier(self.ligandfile)
-      if len(self.failed_mol) > 0: print(f"{len(self.failed_mol)} molecules failed in RDKit SDF loading:", *self.failed_mol)
+      if ("onlymols" in self.parms.keys()) and (self.parms["onlymols"] != ""):
+        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]]; 
+        print(f"Will only input the following molecules: {planned_indexes}"); 
+        self.lig_suppl, self.success_mol, self.failed_mol = self.sdf_supplier(self.ligandfile, inputmols=planned_indexes)
+      else:
+        print("Will input all molecules")
+        self.lig_suppl, self.success_mol, self.failed_mol = self.sdf_supplier(self.ligandfile)
     elif '.mol2' in self.ligandfile:
       # MOL2 format
-      self.lig_suppl = [i for i in plf.mol2_supplier(self.ligandfile)]
-      self.success_mol =[i for i in range(len(self.lig_suppl)) ]
-      self.failed_mol = []
+      if ("onlymols" in self.parms.keys()) and (self.parms["onlymols"] != ""):
+        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]]; 
+        print(f"Will only input the following molecules: {planned_indexes}"); 
+        self.lig_suppl, self.success_mol, self.failed_mol = self.mol2_supplier(self.ligandfile, inputmols=planned_indexes); 
+      else:
+        print("Will input all molecules")
+        self.lig_suppl, self.success_mol, self.failed_mol = self.mol2_supplier(self.ligandfile)
+    if len(self.failed_mol) > 0: 
+        print(f"{len(self.failed_mol)} molecules failed in RDKit SDF loading:", *self.failed_mol)
     print(f"{len(self.lig_suppl)} molecules put to the library supplier (from {self.ligandfile})")
-
     self.datfile = parmdic["resultdat"]
-    # Generate protein-ligand interaction fingerprint
-    fp_hpl = plf.Fingerprint(self.FP_TYPE1)
-    fp_hpl.run_from_iterable(self.lig_suppl, prot)
-    fp_data = fp_hpl.to_dataframe()
-    self.fp_data = self.addinfo(fp_data)
-
-    fp_hpb = plf.Fingerprint(self.FP_TYPE2)
-    fp_hpb.run_from_iterable(self.lig_suppl, prot)
-    fp_data2 = fp_hpb.to_dataframe()
-    self.fp_data2 = self.addinfo(fp_data2)
-
-
-  def clean_mol2(self, mol2file, verbose=False):
-    # Will put the output file to the same directory of to mol2 file
-    if verbose:
-      osstr = f"bash {self.CLEANMOL2SCRIPT} {mol2file}";
-    else :
-      osstr = f"bash {self.CLEANMOL2SCRIPT} {mol2file} 2>&1 > /dev/null";
-    os.system(osstr)
-    sdffile = mol2file.replace(".mol2", ".sdf")
-    cleaned_mol2file = mol2file.replace(".mol2", "_clean.mol2")
-    if os.path.isfile(cleaned_mol2file):
-      return cleaned_mol2file
+    
+  def sdf_supplier(self, path, inputmols=False):
+    """
+      Apart from output molecule, successed and failed molecules should be recorded 
+    """
+    suppl = Chem.SDMolSupplier(path, removeHs=False);
+    indexes = [ i for i in range(suppl.__len__()) ];  
+    planned_indexes = []; 
+    if isinstance(inputmols, list):
+      planned_indexes = inputmols;
     else:
-      if os.path.isfile(sdffile):
-        return sdffile
-      else :
-        print("Failed to clean mol2 file {mol2file}, using the unchanged mol2 file ")
-        return mol2file
+      planned_indexes = indexes;
+    failed_mol = [];  mols = [];  success_mol = [];
+    for i, mol in zip(indexes, suppl):
+      if i in planned_indexes:
+        try:
+          plfmol = plf.Molecule.from_rdkit(mol)
+          mols.append(plfmol)
+          success_mol.append(i)
+        except:
+          failed_mol.append(i)
+      if i > max(planned_indexes):
+        break
+    return mols, success_mol, failed_mol;
+  
+  def mol2_supplier(self, path, inputmols=False):
+    """
+      Apart from output molecule, successed and failed molecules should be recorded 
+    """
+    with open(path, "r") as file1:
+      mol2blocks = file1.read().strip("@<TRIPOS>MOLECULE").split("@<TRIPOS>MOLECULE"); 
+    indexes = [ i for i in range(len(mol2blocks))]; 
+    planned_indexes = []; 
+    if isinstance(inputmols, list):
+      planned_indexes = inputmols;
+    else:
+      planned_indexes = indexes;
+    failed_mol = [];  mols = [];  success_mol = [];
+    for i, moli in zip(indexes, mol2blocks):
+      mol2str = "@<TRIPOS>MOLECULE"+moli; 
+      if i in planned_indexes:
+        try: 
+          mol = Chem.MolFromMol2Block(mol2str, removeHs=False)
+          mols.append(plf.Molecule.from_rdkit(mol)); 
+          success_mol.append(i)
+        except:
+          failed_mol.append(i)
+    return mols, success_mol, failed_mol;
+  
+  def setreflig(self, ligfile):
+    """
+      Not fixed to self.ligandfile because user might want a second reference ligand to use. 
+      Only needs the XYZ for now 
+    """
+    try:
+      if "sdf" in ligfile:
+        refmol, success, failed = self.sdf_supplier(ligfile); 
+      elif "mol2" in ligfile:
+        refmol, _s, _f = [i for i in self.mol2_supplier(ligfile)]; 
+      fp_hpl = plf.Fingerprint(self.FP_TYPE1+self.FP_TYPE2)
+      fp_hpl.run_from_iterable(refmol, self.prot)
+      fp_data = fp_hpl.to_dataframe()
 
+      refmol = Chem.RemoveHs(refmol[0]); 
+      self.refxyz = [_.GetPositions() for _ in refmol.GetConformers()][0]; 
+      print(f"Reference ligand interactions: {fp_data}")
+      
+    except:
+      print("Cannot Sanitize the molecule by RDKit. Trying to use pytraj")
+      import pytraj as pt; 
+      tmptraj = pt.load(ligfile, top=ligfile, mask="!@H*"); 
+      self.refxyz = tmptraj.xyz[0].astype(float); 
+    if len(self.refxyz) > 0:
+      print("Successfully loaded the reference ligand ")
   def addinfo(self, df, topn=-1):
     # Add the Columns about the score and pos_id
     with open(self.datfile, "r") as file1: thelist = [i.strip('\n').split() for i in file1.read().split('\n')]
@@ -118,88 +192,23 @@ class PLIFGen_Dock:
     df["source_campaign"] = col_source_campaign;
     df["can_smile"] = col_smiles;
     return df
+  
+  def gen(self):
+    # Generate protein-ligand interaction fingerprint
+    fp_hpl = plf.Fingerprint(self.FP_TYPE1)
+    fp_hpl.run_from_iterable(self.lig_suppl, self.prot)
+    fp_data = fp_hpl.to_dataframe()
+    self.fp_data = self.addinfo(fp_data)
 
-  def sdf_supplier(self, path):
-    suppl = Chem.SDMolSupplier(path, removeHs=False);
-    indexes = [ i for i in range(suppl.__len__()) ]
-    planned_indexes = []
-    if ("onlymols" in self.parms.keys()) and (self.parms["onlymols"] != ""):
-      if type(self.parms["onlymols"]) == int:
-        planned_indexes = indexes[:self.parms["onlymols"]];
-      else:
-        planned_indexes = [i for i in self.parms["onlymols"]]
-    else:
-      planned_indexes = indexes;
-    failed_mol = [];  mols = [];  success_mol = [];
+    fp_hpb = plf.Fingerprint(self.FP_TYPE2)
+    fp_hpb.run_from_iterable(self.lig_suppl, self.prot)
+    fp_data2 = fp_hpb.to_dataframe()
+    self.fp_data2 = self.addinfo(fp_data2)
 
-    for i, mol in zip(indexes, suppl):
-      if i in planned_indexes:
-        try:
-          plfmol = plf.Molecule.from_rdkit(mol)
-          mols.append(plfmol)
-          success_mol.append(i)
-        except:
-          failed_mol.append(i)
-    return mols, success_mol, failed_mol;
-
-  def docking_OI(self, refmol, dist_cutoff, printrecords=True):
-    molfilename = refmol.__str__();
-    try:
-      if "sdf" in refmol:
-        refmol, success, failed = self.sdf_supplier(refmol)
-      elif "mol2" in refmol:
-        refmol = [i for i in plf.mol2_supplier(refmol)]
-        success = [1]
-      refmol = Chem.RemoveHs(refmol)
-      refxyz = [_.GetPositions() for _ in refmol.GetConformers()][0]
-    except:
-      print("Cannot Sanitize the molecule by RDKit. Only use the coordinates of heave atoms. \nTemporary file will be write to /tmp/testref.xyz. ")
-      os.system(f"obabel {molfilename} -d -O /tmp/testref.xyz")
-      with open("/tmp/testref.xyz", "r") as file1: refxyz = [i.split()[1:] for i in file1.read().strip("\n").split("\n")[2:]]
-      refxyz = np.array(refxyz).astype(float)
-      success = [1]
-
-    if len(success) == 0:
-      raise Exception(f"Error: Found {len(success)} molecules in the input {refmol}")
-      return
-    elif len(success) > 1:
-      raise Exception(f"Error: Found {len(success)} molecules in the input {refmol}. Only the first molecule will be used.")
-      refmol = refmol[0]
-    else:
-      refmol = refmol[0]
-
-    if self.fp_data.__len__() != len(self.success_mol):
-      raise Exception(f"Fingerprint dataframe 1 length ({self.fp_data.__len__()}) not equil to ligand supplier{len(self.success_mol)}")
-    if self.fp_data2.__len__() != len(self.success_mol):
-      raise Exception(f"Fingerprint dataframe 1 length ({self.fp_data.__len__()}) not equil to ligand supplier{len(self.success_mol)}")
-
-    OI_results = [];  OI_ref  = [];  OI_avg  = [];  rnha = [];
-
-    for i, resultmol in zip(range(len(self.lig_suppl)), self.lig_suppl):
-      resultmol = Chem.RemoveHs(resultmol);
-      testxyz = [_.GetPositions() for _ in resultmol.GetConformers()][0]
-
-      nha_ratio = len(testxyz) / len(refxyz)
-
-      distances = distance_matrix(refxyz, testxyz)
-      distlt = distances < dist_cutoff
-      count1 = np.count_nonzero(np.any(distlt, axis = 0))
-      count2 = np.count_nonzero(np.any(distlt, axis = 1))
-      rat1  = count1 / len(testxyz)
-      rat2  = count2 / len(refxyz)
-      r_avg = np.mean([rat1,rat2])
-
-      rnha.append(nha_ratio)
-      OI_results.append(rat1);
-      OI_ref.append(rat2);
-      OI_avg.append((rat1+rat2)/2)
-      if printrecords: print(f"Rank: {self.fp_data.iloc[i].Rank.values[0]} | Ratio_t: {round(rat1,3)} | Ratio_r: {round(rat2,3)} | Ravg {round(r_avg,3)} \
-| Rnha: {round(nha_ratio,3)} ({len(testxyz)}/{len(refxyz)})")
-    self.fp_data["OI_avg"] = self.fp_data2["OI_avg"] = self.OI_avg = OI_avg
-    self.fp_data["OI_ref"] = self.fp_data2["OI_ref"] = self.OI_ref = OI_ref
-    self.fp_data["OI_results"] = self.fp_data2["OI_results"] = self.OI_results = OI_results
-
-  def savepkl(self):
+  def savedata(self):
+    """
+      Serialize the PLIF data 
+    """
     dictosave={
       "failed_mol": self.failed_mol,
       "success_mol" : self.success_mol,
@@ -219,6 +228,42 @@ class PLIFGen_Dock:
     with open(self.parms["outpkl"], "wb") as fileout:
       pickle.dump(dictosave, fileout)
       print("Saved the fingerprint to file:", self.parms["outpkl"])
+      
+  def calc_OI(self, dist_cutoff, printrecords=True):
+    """
+      Additional computations: Overlapping Index
+    """
+    if self.fp_data.__len__() != len(self.success_mol):
+      raise Exception(f"Fingerprint dataframe 1 length ({self.fp_data.__len__()}) not equil to ligand supplier{len(self.success_mol)}")
+    if self.fp_data2.__len__() != len(self.success_mol):
+      raise Exception(f"Fingerprint dataframe 1 length ({self.fp_data.__len__()}) not equil to ligand supplier{len(self.success_mol)}")
+    OI_results = [];  OI_ref  = [];  OI_avg  = [];  rnha = [];
+    for i, resultmol in zip(range(len(self.lig_suppl)), self.lig_suppl):
+      resultmol = Chem.RemoveHs(resultmol);
+      testxyz = [_.GetPositions() for _ in resultmol.GetConformers()][0]
+
+      nha_ratio = len(testxyz) / len(self.refxyz)
+
+      distances = distance_matrix(self.refxyz, testxyz)
+      distlt = distances < dist_cutoff
+      count1 = np.count_nonzero(np.any(distlt, axis = 0))
+      count2 = np.count_nonzero(np.any(distlt, axis = 1))
+      rat1  = count1 / len(testxyz)
+      rat2  = count2 / len(self.refxyz)
+      r_avg = np.mean([rat1,rat2])
+
+      rnha.append(nha_ratio)
+      OI_results.append(rat1);
+      OI_ref.append(rat2);
+      OI_avg.append((rat1+rat2)/2)
+      if printrecords: print(f"Rank: {self.fp_data.iloc[i].Rank.values[0]} | Ratio_t: {round(rat1,3)} | Ratio_r: {round(rat2,3)} | Ravg {round(r_avg,3)} \
+| Rnha: {round(nha_ratio,3)} ({len(testxyz)}/{len(self.refxyz)})")
+    self.fp_data["OI_avg"] = self.fp_data2["OI_avg"] = self.OI_avg = OI_avg
+    self.fp_data["OI_ref"] = self.fp_data2["OI_ref"] = self.OI_ref = OI_ref
+    self.fp_data["OI_results"] = self.fp_data2["OI_results"] = self.OI_results = OI_results
+
+
+
 
 class PLIFGen_MD:
   """
@@ -347,14 +392,17 @@ class PLIFRead_Dock:
     return status[0]
 
   def FPSelectionFilter(self, fpdata, fp_sel, operator="any"):
-    # Available operator, all and any,
+    # Available operator, all and any
     selcols = [fpdata.columns[i] for i in fp_sel]
-    fp_status = (fpdata.iloc[:,fp_sel] == True).to_numpy()
-    if operator == "any":
-      fp_status = [np.any(i) for i in fp_status]
-    if operator == "all":
-      fp_status = [np.all(i) for i in fp_status]
-    status = np.where( np.array(fp_status) == True )[0]
+    fp_status = (fpdata.iloc[:,fp_sel] == True).to_numpy(); 
+    if operator == "or":
+      print("Fingerprint Selector: Using and operator, the poses are kept if they have any of defined fingerprint.");
+      fp_status = [np.any(i) for i in fp_status];
+    if operator == "and":
+      print("Fingerprint Selector: Using and operator, the poses are kept if they have all of defined fingerprint.");
+      fp_status = [np.all(i) for i in fp_status];
+    status = np.where( np.array(fp_status) == True )[0]; 
+    status = np.array(list(set(status))); 
     print(f"Fingerprint Selector: {len(status)} poses are kept")
     return status
 
