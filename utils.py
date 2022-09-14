@@ -3,6 +3,7 @@ import json
 import base64
 from PIL import Image as pilimage
 import numpy as np 
+import os
 
 def clean_mol2(mol2file):
   # Will put the output file to the same directory of to mol2 file
@@ -29,10 +30,19 @@ def cleanMOL2LP(mol2input, mol2out):
   # Read all molecules from the mol2 file 
   with open(mol2input, 'r') as file1:
     # Only keep the MOLECULE, ATOM and BOND field 
-    mols_raw = ['@<TRIPOS>MOLECULE\n'+i for i in file1.read().split('@<TRIPOS>MOLECULE\n') if len(i)>1]
-  mols_cleaned = ["@<TRIPOS>MOLECULE" + mols_raw[i].split("@<TRIPOS>MOLECULE")[1].split("@<TRIPOS>")[0]+"@<TRIPOS>ATOM"+ \
-  mols_raw[i].split("@<TRIPOS>ATOM")[1].split("@<TRIPOS>")[0] + "@<TRIPOS>BOND" + \
-  mols_raw[i].split("@<TRIPOS>BOND")[1].split("@<TRIPOS>")[0] for i in range(len(mols_raw))]
+    mols_raw = ['@<TRIPOS>MOLECULE\n'+i for i in file1.read().split('@<TRIPOS>MOLECULE\n') if len(i)>1 and i[0]!="#"]
+  print(mols_raw); 
+
+  try: 
+    mols_cleaned = ["@<TRIPOS>MOLECULE" + mols_raw[i].split("@<TRIPOS>MOLECULE")[1].split("@<TRIPOS>")[0]+"@<TRIPOS>ATOM"+ \
+    mols_raw[i].split("@<TRIPOS>ATOM")[1].split("@<TRIPOS>")[0] + "@<TRIPOS>BOND" + \
+    mols_raw[i].split("@<TRIPOS>BOND")[1].split("@<TRIPOS>")[0] \
+    for i in range(len(mols_raw))]
+  except: 
+    mols_cleaned = ["@<TRIPOS>MOLECULE" + mols_raw[i].split("@<TRIPOS>MOLECULE")[1].split("@<TRIPOS>")[0]+"@<TRIPOS>ATOM"+ \
+    mols_raw[i].split("@<TRIPOS>ATOM")[1].split("@<TRIPOS>")[0] + "@<TRIPOS>BOND" + \
+    mols_raw[i].split("@<TRIPOS>BOND")[1] \
+    for i in range(len(mols_raw))]
   mols = [i for i in mols_cleaned if len(i) > 1 ]
   # Find dummy atoms and index them
   with open(mol2out,'w') as file1:
