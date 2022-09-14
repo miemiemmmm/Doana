@@ -31,7 +31,6 @@ def cleanMOL2LP(mol2input, mol2out):
   with open(mol2input, 'r') as file1:
     # Only keep the MOLECULE, ATOM and BOND field 
     mols_raw = ['@<TRIPOS>MOLECULE\n'+i for i in file1.read().split('@<TRIPOS>MOLECULE\n') if len(i)>1 and i[0]!="#"]
-  print(mols_raw); 
 
   try: 
     mols_cleaned = ["@<TRIPOS>MOLECULE" + mols_raw[i].split("@<TRIPOS>MOLECULE")[1].split("@<TRIPOS>")[0]+"@<TRIPOS>ATOM"+ \
@@ -43,6 +42,7 @@ def cleanMOL2LP(mol2input, mol2out):
     mols_raw[i].split("@<TRIPOS>ATOM")[1].split("@<TRIPOS>")[0] + "@<TRIPOS>BOND" + \
     mols_raw[i].split("@<TRIPOS>BOND")[1] \
     for i in range(len(mols_raw))]
+
   mols = [i for i in mols_cleaned if len(i) > 1 ]
   # Find dummy atoms and index them
   with open(mol2out,'w') as file1:
