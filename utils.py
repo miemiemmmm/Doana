@@ -173,4 +173,41 @@ def gen3d(struct):
 
 
 
+def AvailabilityCheck(libraryfile, libraryout, threshold=0, forceMCULE=False, forceCS=False):
+  from rdkit import Chem
+  from Doana import prices
+  with open(libraryfile, "r") as file1: 
+    lib = [f"@<TRIPOS>MOLECULE{i}" for i in file1.read().strip("@<TRIPOS>MOLECULE").split("@<TRIPOS>MOLECULE")]; 
+  with open(libraryout, "w") as fileout: 
+    for index, i in enumerate(lib): 
+      try: 
+        themol = Chem.MolFromMol2Block(i); 
+        thesmi = Chem.MolToSmiles(themol)
+        compounds = [thesmi]; 
+        compounds = [i.replace("*", "") for i in compounds]
+        try: 
+          querier.querymols(compounds)
+        except: 
+          querier = prices.MolQuerier()
+          querier.MCULE_TOKEN ="cd69ac4c24cccc1e99b5d6d8f0cb4c267ad84f47"
+          querier.querymols(compounds)
+        price_count = 0; 
+        if isinstance(querier.pricedic[thesmi]["mcule_price"], str):
+          print("not found mcule prices" )
+          if forceMCULE == True: 
+            continue
+        elif isinstance(querier.pricedic[thesmi]["mcule_price"], list):
+          price_count += len(querier.pricedic[thesmi]["mcule_price"]); 
+
+        if isinstance(querier.pricedic[thesmi]["cs_price"], str):
+          print("Not found ChemSpace prices"); 
+          if forceCS == True: 
+            continue
+        elif isinstance(querier.pricedic[thesmi]["cs_price"], list):
+          price_count += len(querier.pricedic[thesmi]["cs_price"]); 
+        print(f"Compound {index} found {price_count} prices")
+        if price_count > threshold: 
+          fileout.write(i); 
+      except: 
+        continue 
 
