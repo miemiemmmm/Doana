@@ -211,3 +211,43 @@ def AvailabilityCheck(libraryfile, libraryout, threshold=0, forceMCULE=False, fo
       except: 
         continue 
 
+def ConcVINAResults(basepath):
+  with open(f"{basepath}/parms.json", "r") as file1:
+    parms = json.load(file1)
+    print(parms)
+  sess_id = parms["session_id"]
+  jobnr = int(parms['jobnr']);
+  molout = open(f"{basepath}/all_mols.mol2", 'w')
+  scoreout = open(f"{basepath}/all_scores.dat", 'w')
+  c = 0;
+  for taski in range(1, jobnr+1):
+    if os.path.isfile(f"{basepath}/task{taski}_worked.mol2"):
+      if os.path.isfile(f"{basepath}/task{taski}_outcome.json"):
+        # Check pose number and score number.
+        with open(f"{basepath}/task{taski}_worked.mol2", "r") as molfile, open(f"{basepath}/task{taski}_outcome.json", "r") as scorefile:
+          mollines = molfile.read()
+          mols = [f"@<TRIPOS>MOLECULE{i}" for i in mollines.strip("@<TRIPOS>MOLECULE").split("@<TRIPOS>MOLECULE")]
+          molnr = len(mols)
+
+          scores = json.load(scorefile)
+          poses = list(scores["poses"].keys())
+          posenr = len(poses)
+          if molnr != posenr:
+            print(f"The number of molecules and the number of score in task {taski} is not equil, skipping this task.")
+          else:
+            print(f"Processing task {taski}; ");
+            molout.write("".join(mols))
+            for p in poses:
+              c+=1
+              thesmi = scores["poses"][p]["smiles"];
+              thescores = scores["poses"][p]["scores"];
+              themolname = scores["poses"][p]["molname"];
+              thedate = scores["poses"][p]["molfinishdate"].replace(" ", "-")
+              scorestr = " ".join([str(i) for i in thescores])
+              scoreout.write(f"{c} {themolname} {thesmi} {scorestr} {sess_id} {thedate}\n")
+      else:
+        print(f"Score file {taski} not found")
+    else:
+      print(f"MOL2 output file {taski} not found")
+  molout.close()
+  scoreout.close()
