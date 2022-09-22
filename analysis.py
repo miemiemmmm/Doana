@@ -2,11 +2,11 @@ import os
 import json
 import pickle
 
-import numpy as np 
-# import pytraj as pt 
+import numpy as np
+# import pytraj as pt
 # import pandas as pd
 import prolif as plf
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 from scipy.spatial import distance_matrix
 
 import MDAnalysis as mda
@@ -19,28 +19,28 @@ from IPython.display import Image
 
 class PLIFGen_Dock:
   """
-    Both SDF and MOL2 formats are supported as input 
-    Example: 
+    Both SDF and MOL2 formats are supported as input
+    Example:
     >>> from Doana import analysis
     >>> parmdic = {
       'reflig'     : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/tmp_Sampling_target_clean.mol2",
       'profile'    : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/tmp_Sampling_target.pdb",
       'resultmols' : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.mol2",
       'resultdat'  : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.dat",
-      'outpkl'     : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.pkl",  
+      'outpkl'     : "/home/yzhang/Documents/Teachings/Tim_Ruth/PaIVKLkS/PaIVKLkS_SEEDdock.pkl",
       'onlymols'   : list(range(1,30))+list(range(50,69)),
     }
     >>> wrapper = analysis.PLIFGen_Dock(parmdic)
-    >>> wrapper.gen() 
+    >>> wrapper.gen()
     >>> OIdic = wrapper.calc_OI(1.5, printrecords=False)
     >>> wrapper.savedata()
   """
   def __init__(self, parmdic):
     self.parms = parmdic;
-    self.refmol = []; 
+    self.refmol = [];
     self.lig_suppl = [];
-    self.ligandfile = parmdic["resultmols"]; 
-
+    self.ligandfile = parmdic["resultmols"];
+    self.type = (self.parms["type"] if "type" in self.parms.keys() and len(self.parms["type"]) > 0 else "seed")
     # Default parameters
     self.FP_TYPE1 = ["HBDonor", "HBAcceptor", "PiStacking", "CationPi","Cationic"]
     self.FP_TYPE2 = ['Hydrophobic']
@@ -52,32 +52,32 @@ class PLIFGen_Dock:
       'PO': 1.97, 'PT': 1.75, 'RA': 2.83, 'RN': 2.2, 'RR': 3.03, 'S': 1.8, 'SB': 2.06, 'SE': 1.9,
       'SI': 2.1, 'SN': 2.17, 'SR': 2.49, 'TE': 2.06, 'TL': 1.96, 'U': 1.86, 'XE': 2.16, 'ZN': 1.39,
     }
-    
+
     # Initial receptor PDB structure
-    try: 
+    try:
       self.profile = self.parms["profile"]
       print(f"Loading receptor PDB structure: {self.profile}")
       mda_prot = mda.Universe(self.profile, top=self.profile, guess_bonds=True, vdwradii=self.VDWRADII);
       elements = mda.topology.guessers.guess_types(mda_prot.atoms.names);
       mda_prot.add_TopologyAttr("elements", elements);
       self.prot = plf.Molecule.from_mda(mda_prot);
-    except: 
-      print("Failed to load the PDB into prolif"); 
-      print("Please carefully read the error message and modify the PDB file."); 
+    except:
+      print("Failed to load the PDB into prolif");
+      print("Please carefully read the error message and modify the PDB file.");
       raise
-    
+
     # Initial pose library
     if "reflig" in self.parms.keys() and len(self.parms["reflig"]) > 0:
       # Initialize reference ligand while initializing the PLIF generator
       self.setreflig(self.parms["reflig"])
-      
+
     # Read ligand molecules
     self.failed_mol = []
     if '.sdf' in self.ligandfile:
       # SDF format
       if ("onlymols" in self.parms.keys()) and (self.parms["onlymols"] != ""):
-        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]]; 
-        print(f"Will only input the following molecules: {planned_indexes}"); 
+        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]];
+        print(f"Will only input the following molecules: {planned_indexes}");
         self.lig_suppl, self.success_mol, self.failed_mol = self.sdf_supplier(self.ligandfile, inputmols=planned_indexes)
       else:
         print("Will input all molecules")
@@ -85,24 +85,24 @@ class PLIFGen_Dock:
     elif '.mol2' in self.ligandfile:
       # MOL2 format
       if ("onlymols" in self.parms.keys()) and (self.parms["onlymols"] != ""):
-        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]]; 
-        print(f"Will only input the following molecules: {planned_indexes}"); 
-        self.lig_suppl, self.success_mol, self.failed_mol = self.mol2_supplier(self.ligandfile, inputmols=planned_indexes); 
+        self.parms["onlymols"] = planned_indexes = [i for i in self.parms["onlymols"]];
+        print(f"Will only input the following molecules: {planned_indexes}");
+        self.lig_suppl, self.success_mol, self.failed_mol = self.mol2_supplier(self.ligandfile, inputmols=planned_indexes);
       else:
         print("Will input all molecules")
         self.lig_suppl, self.success_mol, self.failed_mol = self.mol2_supplier(self.ligandfile)
-    if len(self.failed_mol) > 0: 
+    if len(self.failed_mol) > 0:
         print(f"{len(self.failed_mol)} molecules failed in RDKit SDF loading:", *self.failed_mol)
     print(f"{len(self.lig_suppl)} molecules put to the library supplier (from {self.ligandfile})")
     self.datfile = parmdic["resultdat"]
-    
+
   def sdf_supplier(self, path, inputmols=False):
     """
-      Apart from output molecule, successed and failed molecules should be recorded 
+      Apart from output molecule, successed and failed molecules should be recorded
     """
     suppl = Chem.SDMolSupplier(path, removeHs=False);
-    indexes = [ i for i in range(suppl.__len__()) ];  
-    planned_indexes = []; 
+    indexes = [ i for i in range(suppl.__len__()) ];
+    planned_indexes = [];
     if isinstance(inputmols, list):
       planned_indexes = inputmols;
     else:
@@ -119,80 +119,103 @@ class PLIFGen_Dock:
       if i > max(planned_indexes):
         break
     return mols, success_mol, failed_mol;
-  
+
   def mol2_supplier(self, path, inputmols=False):
     """
-      Apart from output molecule, successed and failed molecules should be recorded 
+      Apart from output molecule, successed and failed molecules should be recorded
     """
     with open(path, "r") as file1:
-      mol2blocks = file1.read().strip("@<TRIPOS>MOLECULE").split("@<TRIPOS>MOLECULE"); 
-    indexes = [ i for i in range(len(mol2blocks))]; 
-    planned_indexes = []; 
+      mol2blocks = file1.read().strip("@<TRIPOS>MOLECULE").split("@<TRIPOS>MOLECULE");
+    indexes = [ i for i in range(len(mol2blocks))];
+    planned_indexes = [];
     if isinstance(inputmols, list):
       planned_indexes = inputmols;
     else:
       planned_indexes = indexes;
     failed_mol = [];  mols = [];  success_mol = [];
     for i, moli in zip(indexes, mol2blocks):
-      mol2str = "@<TRIPOS>MOLECULE"+moli; 
+      mol2str = "@<TRIPOS>MOLECULE"+moli;
       if i in planned_indexes:
-        try: 
+        try:
           mol = Chem.MolFromMol2Block(mol2str, removeHs=False)
-          mols.append(plf.Molecule.from_rdkit(mol)); 
+          mols.append(plf.Molecule.from_rdkit(mol));
           success_mol.append(i)
         except:
           failed_mol.append(i)
     return mols, success_mol, failed_mol;
-  
+
   def setreflig(self, ligfile):
     """
-      Not fixed to self.ligandfile because user might want a second reference ligand to use. 
-      Only needs the XYZ for now 
+      Not fixed to self.ligandfile because user might want a second reference ligand to use.
+      Only needs the XYZ for now
     """
     try:
       if "sdf" in ligfile:
-        refmol, success, failed = self.sdf_supplier(ligfile); 
+        refmol, success, failed = self.sdf_supplier(ligfile);
       elif "mol2" in ligfile:
-        refmol, _s, _f = [i for i in self.mol2_supplier(ligfile)]; 
+        refmol, _s, _f = [i for i in self.mol2_supplier(ligfile)];
       fp_hpl = plf.Fingerprint(self.FP_TYPE1+self.FP_TYPE2)
       fp_hpl.run_from_iterable(refmol, self.prot)
       fp_data = fp_hpl.to_dataframe()
 
-      refmol = Chem.RemoveHs(refmol[0]); 
-      self.refxyz = [_.GetPositions() for _ in refmol.GetConformers()][0]; 
+      refmol = Chem.RemoveHs(refmol[0]);
+      self.refxyz = [_.GetPositions() for _ in refmol.GetConformers()][0];
       print(f"Reference ligand interactions: {fp_data}")
-      
+
     except:
       print("Cannot Sanitize the molecule by RDKit. Trying to use pytraj")
-      import pytraj as pt; 
-      tmptraj = pt.load(ligfile, top=ligfile, mask="!@H*"); 
-      self.refxyz = tmptraj.xyz[0].astype(float); 
+      import pytraj as pt;
+      tmptraj = pt.load(ligfile, top=ligfile, mask="!@H*");
+      self.refxyz = tmptraj.xyz[0].astype(float);
     if len(self.refxyz) > 0:
       print("Successfully loaded the reference ligand ")
   def addinfo(self, df, topn=-1):
     # Add the Columns about the score and pos_id
-    with open(self.datfile, "r") as file1: thelist = [i.strip('\n').split() for i in file1.read().split('\n')]
-    score_table = [[i+1]+thelist[i] for i in self.success_mol]
-    score_table    = np.array(score_table);
-    col_pos_id     = score_table[:,1].astype(str);
-    col_smiles     = score_table[:,2].astype(str);
-    col_seed_total = score_table[:,3].astype(str);
-    col_seed_vdw   = score_table[:,4].astype(str);
-    col_ranking    = score_table[:,0].astype(int);
-    col_nha        = score_table[:,9].astype(str);
-    col_date       = score_table[:,10].astype(str);
-    col_source_campaign   = score_table[:,11].astype(str);
+    with open(self.datfile, "r") as file1:
+      thelist = [i.strip('\n').split() for i in file1.read().split('\n')]
+    score_table = [[i + 1] + thelist[i] for i in self.success_mol]
+    score_table = np.array(score_table);
+    if self.type == "seed":
+      col_pos_id     = score_table[:,1].astype(str);
+      col_smiles     = score_table[:,2].astype(str);
+      col_seed_total = score_table[:,3].astype(str);
+      col_seed_vdw   = score_table[:,4].astype(str);
+      col_ranking    = score_table[:,0].astype(int);
+      col_nha        = score_table[:,9].astype(str);
+      col_date       = score_table[:,10].astype(str);
+      col_source_campaign   = score_table[:,11].astype(str);
 
-    df["Rank"] = col_ranking
-    df["seed_total"]   = col_seed_total;
-    df["seed_vdw"] = col_seed_vdw;
-    df["pos_id"]   = col_pos_id;
-    df["nha"] = col_nha;
-    df["date"] = col_date;
-    df["source_campaign"] = col_source_campaign;
-    df["can_smile"] = col_smiles;
-    return df
-  
+      df["Rank"] = col_ranking
+      df["seed_total"]   = col_seed_total;
+      df["seed_vdw"] = col_seed_vdw;
+      df["pos_id"]   = col_pos_id;
+      df["nha"] = col_nha;
+      df["date"] = col_date;
+      df["source_campaign"] = col_source_campaign;
+      df["can_smile"] = col_smiles;
+      return df
+    elif self.type == "vina":
+      col_pos_id = score_table[:, 0].astype(str);
+      col_smiles = score_table[:, 2].astype(str);
+      col_vina_total = score_table[:, 3].astype(str);
+      col_inter = score_table[:, 4].astype(str);
+      col_intra = score_table[:, 5].astype(str);
+      col_torsion = score_table[:, 6].astype(str);
+      col_ranking = score_table[:, 0].astype(int);
+      col_date = score_table[:, 9].astype(str);
+      col_source_campaign = score_table[:, 8].astype(str);
+
+      df["Rank"] = col_ranking
+      df["vina_total"] = col_vina_total;
+      df["vina_inter"] = col_inter;
+      df["vina_intra"] = col_intra;
+      df["vina_torsion"] = col_torsion;
+      df["pos_id"] = col_pos_id;
+      df["date"] = col_date;
+      df["source_campaign"] = col_source_campaign;
+      df["can_smile"] = col_smiles;
+      return df
+
   def gen(self):
     # Generate protein-ligand interaction fingerprint
     fp_hpl = plf.Fingerprint(self.FP_TYPE1)
@@ -207,7 +230,7 @@ class PLIFGen_Dock:
 
   def savedata(self):
     """
-      Serialize the PLIF data 
+      Serialize the PLIF data
     """
     dictosave={
       "failed_mol": self.failed_mol,
@@ -228,7 +251,7 @@ class PLIFGen_Dock:
     with open(self.parms["outpkl"], "wb") as fileout:
       pickle.dump(dictosave, fileout)
       print("Saved the fingerprint to file:", self.parms["outpkl"])
-      
+
   def calc_OI(self, dist_cutoff, printrecords=True):
     """
       Additional computations: Overlapping Index
@@ -379,7 +402,7 @@ class PLIFRead_Dock:
     elif operator == "lt": hbstatus = np.where(hbCount < val);
     print(f"Hydrogen Bond Count Selector: {len(hbstatus[0])} poses are kept")
     return hbstatus[0]
-    
+
   def colFilter(self, dataset, colNr, operator, val):
     thecol = [i for i in dataset.columns][colNr];
     colvalues = dataset[thecol].astype(float);
@@ -394,15 +417,15 @@ class PLIFRead_Dock:
   def FPSelectionFilter(self, fpdata, fp_sel, operator="any"):
     # Available operator, all and any
     selcols = [fpdata.columns[i] for i in fp_sel]
-    fp_status = (fpdata.iloc[:,fp_sel] == True).to_numpy(); 
+    fp_status = (fpdata.iloc[:,fp_sel] == True).to_numpy();
     if operator == "or":
       print("Fingerprint Selector: Using and operator, the poses are kept if they have any of defined fingerprint.");
       fp_status = [np.any(i) for i in fp_status];
     if operator == "and":
       print("Fingerprint Selector: Using and operator, the poses are kept if they have all of defined fingerprint.");
       fp_status = [np.all(i) for i in fp_status];
-    status = np.where( np.array(fp_status) == True )[0]; 
-    status = np.array(list(set(status))); 
+    status = np.where( np.array(fp_status) == True )[0];
+    status = np.array(list(set(status)));
     print(f"Fingerprint Selector: {len(status)} poses are kept")
     return status
 
@@ -416,16 +439,16 @@ class PLIFRead_Dock:
 
   def getPOSIDByStatus(self, status):
     return self.fpdata.iloc[status, :].loc[:,"pos_id"].to_numpy().astype(str)
-  
+
   def getPOSIDQuery(self, posids):
     pos_idstr = ",".join([str(i) for i in posids])
     return f"pos_id in ({pos_idstr})"
-  
+
   def getPropByPOSID(self, pos_ids):
     result = np.array([ self.fpdata[self.fpdata['pos_id'] == i].to_numpy()[0][-11:] for i in pos_ids]).astype(str)
     propStr = "\n".join([", ".join(i) for i in result])
     return propStr
-  
+
   def getSmiByPOSID(self, pos_ids):
     result = [ self.fpdata[self.fpdata['pos_id'] == i]["can_smile"].values.tolist()[0] for i in pos_ids]
     return [i for i in result]
@@ -445,16 +468,16 @@ class PLIFRead_Dock:
                                legends=[f"pos_id: {i}" for i in pos_ids],returnPNG=False)
     img.save("/tmp/molgrid.png")
     return Image("/tmp/molgrid.png")
-  
+
   def drawHist(self, dataframe, col, n_bins=10):
     dataset = dataframe[dataframe.columns[col]].to_numpy().astype(float);
     fig, ax = plt.subplots(1, 1,figsize=(10, 5), sharey=True, tight_layout=True)
     N, bins, patches = ax.hist(dataset, bins=n_bins)
     return fig, ax, N, bins, patches
   def matchSubStructure(self, poslst, structstr):
-    substruct = Chem.MolFromSmarts(structstr); 
-    smilst = self.getSmiByPOSID(poslst);  
-    smilst = [i.replace("*", "") for i in smilst]; 
+    substruct = Chem.MolFromSmarts(structstr);
+    smilst = self.getSmiByPOSID(poslst);
+    smilst = [i.replace("*", "") for i in smilst];
     retmols = []
     for i,j in zip(poslst,smilst):
       try:
@@ -464,7 +487,7 @@ class PLIFRead_Dock:
       except:
         pass
     print(f"Substructure Match: {len(retmols)} poses kept from {len(poslst)}")
-    return retmols; 
+    return retmols;
 
 
 
