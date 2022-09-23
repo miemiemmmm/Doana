@@ -195,15 +195,15 @@ class PLIFGen_Dock:
       df["can_smile"] = col_smiles;
       return df
     elif self.type == "vina":
-      col_pos_id = score_table[:, 0].astype(str);
-      col_smiles = score_table[:, 2].astype(str);
-      col_vina_total = score_table[:, 3].astype(str);
-      col_inter = score_table[:, 4].astype(str);
-      col_intra = score_table[:, 5].astype(str);
-      col_torsion = score_table[:, 6].astype(str);
-      col_ranking = score_table[:, 0].astype(int);
-      col_date = score_table[:, 9].astype(str);
-      col_source_campaign = score_table[:, 8].astype(str);
+      col_pos_id = score_table[:, 1].astype(str);
+      col_smiles = score_table[:, 3].astype(str);
+      col_vina_total = score_table[:, 4].astype(str);
+      col_inter = score_table[:, 5].astype(str);
+      col_intra = score_table[:, 6].astype(str);
+      col_torsion = score_table[:, 7].astype(str);
+      col_ranking = score_table[:, 1].astype(int);
+      col_date = score_table[:, 10].astype(str);
+      col_source_campaign = score_table[:, 9].astype(str);
 
       df["Rank"] = col_ranking
       df["vina_total"] = col_vina_total;
