@@ -180,6 +180,10 @@ class PLIFGen_Dock:
       col_smiles     = score_table[:,2].astype(str);
       col_seed_total = score_table[:,3].astype(str);
       col_seed_vdw   = score_table[:,4].astype(str);
+      col_seed_delec = score_table[:,5].astype(str);
+      col_seed_elinw = score_table[:,6].astype(str);
+      col_seed_resdes  = score_table[:,7].astype(str);
+      col_seed_fragdes = score_table[:,8].astype(str);
       col_ranking    = score_table[:,0].astype(int);
       col_nha        = score_table[:,9].astype(str);
       col_date       = score_table[:,10].astype(str);
@@ -188,6 +192,10 @@ class PLIFGen_Dock:
       df["Rank"] = col_ranking
       df["seed_total"]   = col_seed_total;
       df["seed_vdw"] = col_seed_vdw;
+      df["seed_delec"] = col_seed_delec;
+      df["seed_elinw"] = col_seed_elinw;
+      df["seed_resdes"] = col_seed_resdes;
+      df["seed_fragdes"] = col_seed_fragdes;
       df["pos_id"]   = col_pos_id;
       df["nha"] = col_nha;
       df["date"] = col_date;
@@ -469,7 +477,13 @@ class PLIFRead_Dock:
     img.save("/tmp/molgrid.png")
     return Image("/tmp/molgrid.png")
 
-  def drawHist(self, dataframe, col, n_bins=10):
+  def drawHist(self, dataframe, n_bins=10):
+    dataset = dataframe.to_numpy().astype(float);
+    fig, ax = plt.subplots(1, 1,figsize=(10, 5), sharey=True, tight_layout=True)
+    N, bins, patches = ax.hist(dataset, bins=n_bins)
+    return fig, ax, N, bins, patches
+
+  def drawHistByCol(self, dataframe, col, n_bins=10):
     dataset = dataframe[dataframe.columns[col]].to_numpy().astype(float);
     fig, ax = plt.subplots(1, 1,figsize=(10, 5), sharey=True, tight_layout=True)
     N, bins, patches = ax.hist(dataset, bins=n_bins)
