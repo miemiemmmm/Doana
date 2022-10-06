@@ -251,3 +251,34 @@ def ConcVINAResults(basepath):
       print(f"MOL2 output file {taski} not found")
   molout.close()
   scoreout.close()
+
+
+def ReadMol2(mol2file): 
+  from rdkit import Chem
+  from rdkit.Chem import AllChem
+  themol = Chem.MolFromMol2File(mol2file , sanitize=False)
+  try: 
+    AllChem.Compute2DCoords(themol)
+    themol = Chem.RemoveHs(themol)
+  except: 
+    pass
+
+  return themol 
+
+def PTToMDASelect(traj_pt, traj_mda, pt_sel):
+  """
+  Conver the pytraj selection syntax to MDA selected atom group. 
+  """
+  idxs = traj_pt.top.select(pt_sel)
+  selstr = ""
+  for i in idxs: 
+    if len(selstr) == 0:
+      selstr = f"index {i}"; 
+    else: 
+      selstr += f" or index {i}"; 
+  selatoms = traj_mda.select_atoms(selstr)
+  if len(idxs) == selatoms.atoms.__len__(): 
+    print(f"Selected {selatoms.atoms.__len__()} atoms")
+  else: 
+    print(f"Selected {selatoms.atoms.__len__()} atoms, however, different from the reference {len(idxs)} atoms ")
+  return selatoms, idxs
